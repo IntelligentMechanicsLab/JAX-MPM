@@ -1,5 +1,5 @@
-# JAX-MPM
-General-purpose differentiable meshfree solver built on JAX and the Material Point Method (MPM), supporting GPU-accelerated forward and inverse modeling for large deformations, frictional contact, and inelastic materials, with applications in geomechanics and geophysical hazards.
+# Machine Learning Augmented JAX-MPM
+General-purpose differentiable meshfree solver built on JAX and the Material Point Method (MPM), enabling GPU-accelerated forward and inverse modeling of large deformations, frictional contact, and inelastic materials. Designed for geomechanics and geophysical hazard applications, JAX-MPM also integrates seamlessly with deep learning models for data assimilation and parameter inference.
 
 
 ## Citation
