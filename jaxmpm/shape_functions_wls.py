@@ -154,7 +154,7 @@ def build_shape_fn_wls(cfg):
             jnp.stack([Sx,  Sxx, Sxy], axis=-1),
             jnp.stack([Sy,  Sxy, Syy], axis=-1),
         ], axis=-2)  # (n_p, 3, 3)
-        A = A + 1e-12 * jnp.eye(3)[None]  # Tikhonov regularisation
+        A = A + 1e-8 * jnp.eye(3)[None]  # Tikhonov regularisation
 
         # ---- 3. Weight-correction scalars (c0, cx, cy) ----
         # Solve A @ [c0, cx, cy]^T = e_0 = [1, 0, 0]^T  for each particle.

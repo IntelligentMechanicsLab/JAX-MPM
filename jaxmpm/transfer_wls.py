@@ -103,6 +103,8 @@ def build_p2g_wls(cfg):
                 # -- WLS-corrected weight --
                 phi_ij  = w[i, :, 0] * w[j, :, 1]          # (n_p,)  standard
                 phi_cor = (c0 + cx * r[:, 0] + cy * r[:, 1]) * phi_ij  # corrected
+                # clamp to non-negative: WLS can produce tiny negatives at corners
+                phi_cor = jnp.maximum(0.0, phi_cor)
                 weight  = jnp.where(nb_mask, phi_cor, phi_ij) * am
 
                 # -- WLS-corrected gradient of shape function --
@@ -190,6 +192,7 @@ def build_g2p_wls(cfg):
                 r       = (base + jnp.array([i, j])) * dh - x   # x_node - x_p
                 phi_ij  = w[i, :, 0] * w[j, :, 1]
                 phi_cor = (c0 + cx * r[:, 0] + cy * r[:, 1]) * phi_ij
+                phi_cor = jnp.maximum(0.0, phi_cor)  # clamp negatives at corners
                 weight  = jnp.where(nb_mask, phi_cor, phi_ij) * am  # (n_p,)
 
                 # dpos in physical units for B / Dp matrices
