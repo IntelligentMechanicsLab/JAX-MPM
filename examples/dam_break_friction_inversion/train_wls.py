@@ -118,10 +118,8 @@ def main():
         _, _, _, _, _, x_hist = simulate_wls(
             rho0_arr, v0, x0, C0, pressure0, sim_bands
         )
-        err = jnp.linalg.norm(
-            x_hist[1:, obs_idx] - ground_truth[1:x_hist.shape[0], obs_idx],
-            axis=-1,
-        )
+        diff = x_hist[1:, obs_idx] - ground_truth[1:x_hist.shape[0], obs_idx]
+        err = jnp.sqrt(jnp.sum(jnp.square(diff), axis=-1) + 1e-20)
         return jnp.sum(jnp.sum(err, axis=1))
 
     # ------------------------------------------------------------------
