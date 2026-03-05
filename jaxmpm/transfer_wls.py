@@ -14,8 +14,9 @@ Key differences from ``transfer.py``:
 * **G2P**: Mass-weighted velocity gather uses WLS-corrected weights Φ_ij
   near walls, standard weights φ_ij elsewhere.
 
-The constitutive model (incremental weakly-compressible pressure) is
-identical to the original ``transfer.py``.
+The constitutive model uses F-tracking absolute weakly-compressible EOS
+(same as ``transfer.py`` and ``transfer_flip.py``):
+    F_new = (I + dt·C) @ F,  J = det(F_new),  p = c²·(ρ₀/J − ρ₀)
 """
 
 import jax
@@ -26,6 +27,12 @@ from jax import jit
 def build_p2g_wls(cfg):
     """Return a JIT-compiled WLS-corrected particle-to-grid transfer.
 
+    Uses F-tracking EOS (same as ``transfer.py``):
+
+        F_new = (I + dt·C) @ F
+        J     = det(F_new)
+        p     = c² · (ρ₀/J − ρ₀)   (absolute weakly-compressible EOS)
+
     Parameters
     ----------
     cfg : MPMConfig
@@ -33,21 +40,22 @@ def build_p2g_wls(cfg):
     Returns
     -------
     p2g_wls : callable
-        ``p2g_wls(p_rho, v, x, C, pressure, base, fx, w, dw,
-                  nb_mask, c0, cx, cy, C2, C3)
-         -> (p_rho_next, pressure, grid_v, grid_m)``
+        ``p2g_wls(F, v, x, C, base, fx, w, dw, nb_mask, c0, cx, cy)
+         -> (F_new, grid_v, grid_m)``
     """
     dt       = cfg.dt
     dh       = cfg.dh
     p_mass   = cfg.p_mass
+    p_vol0   = cfg.p_vol0
     rho0     = cfg.rho0
-    modulus  = cfg.modulus
+    c_sq     = cfg.c ** 2
+    mu       = cfg.mu
     n_grid_x = cfg.n_grid_x
     n_grid_y = cfg.n_grid_y
     dim      = 2
 
     @jit
-    def p2g_wls(p_rho, v, x, C, pressure,
+    def p2g_wls(F, v, x, C,
                 base, fx, w, dw,
                 nb_mask, c0, cx, cy):
         """WLS-corrected scatter from particles to grid.
@@ -59,35 +67,40 @@ def build_p2g_wls(cfg):
 
         Parameters
         ----------
-        p_rho     : (n_p,)      particle densities
-        v         : (n_p, 2)    particle velocities
-        x         : (n_p, 2)    particle positions
-        C         : (n_p,2,2)   APIC affine velocity matrix
-        pressure  : (n_p,2,2)   Cauchy pressure tensor (diagonal)
-        base      : (n_p, 2)    base grid-node indices
-        fx        : (n_p, 2)    fractional cell positions
-        w         : (3, n_p, 2) standard B-spline weights
-        dw        : (3, n_p, 2) standard B-spline gradients [m⁻¹]
-        nb_mask   : (n_p,)      True = particle is near a wall node
-        c0,cx,cy  : (n_p,)      WLS weight-correction scalars
+        F         : (n_p, 2, 2)   deformation gradient
+        v         : (n_p, 2)      particle velocities
+        x         : (n_p, 2)      particle positions
+        C         : (n_p, 2, 2)   APIC affine velocity matrix (≈ ∇v)
+        base      : (n_p, 2)      base grid-node indices
+        fx        : (n_p, 2)      fractional cell positions
+        w         : (3, n_p, 2)   standard B-spline weights
+        dw        : (3, n_p, 2)   standard B-spline gradients [m⁻¹]
+        nb_mask   : (n_p,)        True = particle is near a wall node
+        c0,cx,cy  : (n_p,)        WLS weight-correction scalars
 
         Returns
         -------
-        p_rho_next, pressure, grid_v, grid_m
+        F_new, grid_v, grid_m
         """
         grid_v = jnp.zeros((n_grid_x + 1, n_grid_y + 1, dim))
         grid_m = jnp.zeros((n_grid_x + 1, n_grid_y + 1))
 
-        # ── Density / pressure update (identical to transfer.py) ──────────
-        vol_strain = jnp.trace(C, axis1=1, axis2=2) * dt
-        p_vol_prev = p_mass / p_rho
-        dJ         = 1.0 + vol_strain
-        p_vol_next = p_vol_prev * dJ
-        p_rho_next = p_rho / dJ
+        # F-tracking density / volume update
+        new_F      = (jnp.eye(2) + dt * C) @ F
+        J          = jnp.linalg.det(new_F)
+        p_vol_next = p_vol0 * J
 
-        dp       = p_rho_next * modulus / rho0 * vol_strain
-        pressure = pressure - dp[:, None, None] * jnp.eye(2)
-        stress   = -pressure  # (n_p, 2, 2)
+        # Absolute weakly-compressible EOS: p = c²·(ρ₀/J − ρ₀)
+        pressure_scalar = c_sq * (rho0 / J - rho0)   # (n_p,)
+
+        # Full Newtonian Cauchy stress:
+        #   σ = -p·I  − (2/3)·μ·tr(d)·I  + 2·μ·d,  d = (C+Cᵀ)/2
+        d = 0.5 * (C + C.transpose(0, 2, 1))
+        cauchy_stress = (
+            -pressure_scalar[:, None, None] * jnp.eye(2)
+            - (2.0 / 3.0 * mu) * jnp.trace(C, axis1=1, axis2=2)[:, None, None] * jnp.eye(2)
+            + 2.0 * mu * d
+        )
 
         # ── Loop over 3×3 stencil ─────────────────────────────────────────
         for i in range(3):
@@ -120,14 +133,14 @@ def build_p2g_wls(cfg):
 
                 dpos = (jnp.array([i, j], dtype=float) - fx) * dh   # (n_p, 2)
 
-                # -- APIC momentum scatter (no stress in affine) --
+                # -- APIC momentum scatter --
                 add_mom = p_mass * v + jnp.einsum('nij,nj->ni', p_mass * C, dpos)
                 grid_v  = grid_v.at[iic, jjc, :].add(weight[:, None] * add_mom)
                 grid_m  = grid_m.at[iic, jjc].add(weight * p_mass)
 
                 # -- Explicit internal force via corrected gradient --
                 # f_ip = -V_p · σ_p : ∇Φ_ip   (scattered to node i)
-                force  = -p_vol_next[:, None] * jnp.einsum('nab,nb->na', stress, grad_phi)
+                force  = -p_vol_next[:, None] * jnp.einsum('nab,nb->na', cauchy_stress, grad_phi)
                 grid_v = grid_v.at[iic, jjc, :].add(dt * force)
 
         return new_F, grid_v, grid_m
