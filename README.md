@@ -125,9 +125,9 @@ for a complete, runnable inverse-problem workflow.
 
 ## Results 📷
 
-### Dam-break validation — APIC / TPIC / FLIP vs Ritter (§5.1.1)
+### Dam-break validation — APIC / TPIC / FLIP vs Ritter (§4.1.1)
 
-![Dam-break validation: particle snapshots and wave-front comparison for APIC, TPIC and FLIP against the Ritter analytical solution](docs/validation_comparison.png)
+<img src="docs/validation_comparison.png" width="900" alt="Dam-break validation: particle snapshots and wave-front comparison for APIC, TPIC and FLIP against the Ritter analytical solution" />
 
 | APIC | TPIC | FLIP |
 |:----:|:----:|:----:|
@@ -135,9 +135,9 @@ for a complete, runnable inverse-problem workflow.
 
 ### Spatially varying friction inversion (§5.1.3)
 
-![Training convergence: loss vs epoch for the friction inversion problem](docs/inversion_loss.png)
+<img src="docs/inversion_loss.png" width="600" alt="Training convergence: loss vs epoch for the friction inversion problem" />
 
-![Friction inversion result: recovered vs true bottom friction field and final particle state](docs/inversion_result.png)
+<img src="docs/inversion_result.png" width="600" alt="Friction inversion result: recovered vs true bottom friction field and final particle state" />
 
 ---
 
