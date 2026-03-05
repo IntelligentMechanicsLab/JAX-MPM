@@ -80,18 +80,13 @@ def build_solver_wls(cfg, n_particles):
 
         # ── WLS shape functions ─────────────────────────────────────────
         base, fx, w, dw = compute_weights(x)
-        # stop_gradient: WLS coefficients are purely geometric corrections;
-        # differentiating through jsl.solve / linalg.inv near corners
-        # produces ill-conditioned Jacobians that cause NaN gradients.
-        nb_mask, c0, cx, cy, C2, C3 = jax.lax.stop_gradient(
-            compute_wls(base, x, w)
-        )
+        nb_mask, c0, cx, cy = compute_wls(base, x, w)
 
-        # ── P2G (WLS-corrected) ─────────────────────────────────────────
+        # ── P2G (WLS weight-corrected) ───────────────────────────────
         p_rho, pressure, grid_v, grid_m = p2g_wls(
             p_rho, v, x, C, pressure,
             base, fx, w, dw,
-            nb_mask, c0, cx, cy, C2, C3,
+            nb_mask, c0, cx, cy,
         )
 
         # ── Grid operations (gravity + Coulomb friction, unchanged) ─────
