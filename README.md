@@ -55,11 +55,14 @@ DiffProg-JAX-MPM/
 │   └── solver.py                   #   Time-stepping & scan-based integration
 │
 ├── examples/                       # Reproducing paper results
-│   └── dam_break_friction_inversion/   §5.1.3 — spatially varying friction
+│   ├── dam_break_friction_inversion/   §5.1.3 — spatially varying friction
+│   │   ├── README.md
+│   │   ├── generate_data.py        #   Forward sim → ground truth
+│   │   ├── train.py                #   Inverse solve
+│   │   └── plot_results.py         #   Visualisation
+│   └── dam_break_validation/           §5.1.1 — transfer scheme comparison
 │       ├── README.md
-│       ├── generate_data.py        #   Forward sim → ground truth
-│       ├── train.py                #   Inverse solve
-│       └── plot_results.py         #   Visualisation
+│       └── run_validation.py       #   APIC / TPIC / FLIP vs Ritter solution
 │
 ├── requirements.txt
 ├── LICENSE
@@ -118,6 +121,7 @@ for a complete, runnable inverse-problem workflow.
 | Example | Section | Description |
 |---------|---------|-------------|
 | [Dam-break friction inversion](examples/dam_break_friction_inversion/) | §5.1.3 | Recover spatially varying bottom friction from sparse Lagrangian observations |
+| [Dam-break validation](examples/dam_break_validation/) | §5.1.1 | Compare APIC / TPIC / FLIP against the Ritter analytical solution |
 
 *More examples will be added progressively.*
 
