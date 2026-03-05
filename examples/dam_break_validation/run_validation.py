@@ -188,18 +188,77 @@ pressure  = jnp.zeros((n_particles, 2, 2))
 state_mat = jnp.zeros((n_particles, 2, 2))   # C (APIC/TPIC) or Grad_v (FLIP)
 
 # ---------------------------------------------------------------------------
-# PyVista visualisation helpers
+# Matplotlib frame renderer  (reliable headless GIF via imageio)
 # ---------------------------------------------------------------------------
 
-def _build_plotter(offscreen: bool):
+import matplotlib
+matplotlib.use("Agg")          # non-interactive, no display required
+import matplotlib.pyplot as plt
+import imageio.v2 as imageio
+import io
+
+# Visual aspect: domain 2.0 × 0.12, but water column is only 0.1 m tall;
+# stretch y-axis ×5 so the thin layer is readable.
+_Y_SCALE   = 5.0
+_FIG_W     = 12.0                          # inches
+_FIG_H     = _FIG_W * (cfg.domain_y * _Y_SCALE) / cfg.domain_x
+
+
+def _render_frame(x_2d, t):
+    """Render one GIF frame with matplotlib and return a NumPy RGBA array."""
+    fig, ax = plt.subplots(figsize=(_FIG_W, _FIG_H), dpi=100)
+
+    # Particles
+    xp = np.array(x_2d)
+    ax.scatter(xp[:, 0], xp[:, 1] * _Y_SCALE,
+               s=0.4, c="steelblue", alpha=0.8, linewidths=0)
+
+    # Ritter analytical front (red)
+    xf, yf = ritter_front(t)
+    ax.plot(xf, yf * _Y_SCALE, color="red", linewidth=1.5,
+            label="Ritter (1892)")
+    # Top horizontal segment of the front
+    x_top = np.linspace(left, float(xf.min()), 80)
+    ax.plot(x_top, np.ones(80) * top * _Y_SCALE,
+            color="red", linewidth=1.5)
+
+    # Domain box
+    for (x0, y0), (x1, y1) in [
+        ((0, 0), (cfg.domain_x, 0)),
+        ((cfg.domain_x, 0), (cfg.domain_x, cfg.domain_y * _Y_SCALE)),
+        ((cfg.domain_x, cfg.domain_y * _Y_SCALE), (0, cfg.domain_y * _Y_SCALE)),
+        ((0, cfg.domain_y * _Y_SCALE), (0, 0)),
+    ]:
+        ax.plot([x0, x1], [y0, y1], "k-", linewidth=0.8)
+
+    ax.set_xlim(-0.02 * cfg.domain_x, 1.02 * cfg.domain_x)
+    ax.set_ylim(-0.05 * cfg.domain_y * _Y_SCALE,
+                 1.10 * cfg.domain_y * _Y_SCALE)
+    ax.set_xlabel("x (m)", fontsize=10)
+    ax.set_ylabel(f"y × {_Y_SCALE:.0f}  (m)", fontsize=10)
+    ax.set_title(f"Dam-break [{scheme.upper()}]   t = {t:.2f} s", fontsize=12)
+    ax.legend(loc="upper right", fontsize=9, framealpha=0.7)
+    ax.set_aspect("equal")
+    fig.tight_layout()
+
+    buf = io.BytesIO()
+    fig.savefig(buf, format="png", dpi=100)
+    plt.close(fig)
+    buf.seek(0)
+    return imageio.imread(buf)
+
+
+# ---------------------------------------------------------------------------
+# Optional PyVista interactive display  (only when --no-display is NOT set)
+# ---------------------------------------------------------------------------
+
+def _build_pv_plotter():
     import pyvista as pv
-    plotter = pv.Plotter(off_screen=offscreen)
+    plotter = pv.Plotter()
     plotter.set_background("white")
-    plotter.set_scale(xscale=1, yscale=5, zscale=1)
+    plotter.set_scale(xscale=1, yscale=_Y_SCALE, zscale=1)
     plotter.view_xy()
     plotter.add_axes(interactive=True)
-    plotter.image_transparent_background = True
-    # Domain outline
     pts = [[0, 0, 0], [cfg.domain_x, 0, 0],
            [cfg.domain_x, cfg.domain_y, 0], [0, cfg.domain_y, 0]]
     for a, b in [(0, 1), (1, 2), (2, 3), (3, 0)]:
@@ -207,23 +266,21 @@ def _build_plotter(offscreen: bool):
     return plotter
 
 
-def _particle_mesh(x_2d):
+def _pv_particle_mesh(x_2d):
     import pyvista as pv
     z   = np.zeros((x_2d.shape[0], 1))
-    pts = np.hstack((np.array(x_2d), z))
-    return pv.PolyData(pts)
+    return pv.PolyData(np.hstack((np.array(x_2d), z)))
 
 
-def _front_polyline(t):
+def _pv_front_polyline(t):
     import pyvista as pv
-    xf, yf  = ritter_front(t)
-    x_top   = np.linspace(left, xf.min(), 100)
-    y_top   = np.ones(100) * top
-    pts     = np.vstack([np.column_stack([xf, yf]),
-                          np.column_stack([x_top, y_top])])
-    pts3d   = np.hstack((pts, np.zeros((pts.shape[0], 1))))
-    poly    = pv.PolyData(pts3d)
-    N       = pts3d.shape[0]
+    xf, yf = ritter_front(t)
+    x_top  = np.linspace(left, float(xf.min()), 80)
+    pts    = np.vstack([np.column_stack([xf, yf]),
+                        np.column_stack([x_top, np.ones(80) * top])])
+    pts3d  = np.hstack((pts, np.zeros((pts.shape[0], 1))))
+    poly   = pv.PolyData(pts3d)
+    N      = pts3d.shape[0]
     poly.lines = np.hstack([[N], np.arange(N)])
     return poly
 
@@ -236,28 +293,31 @@ print(f"[dam_break_validation] transfer = {scheme.upper()},  "
       f"n_particles = {n_particles},  dt = {cfg.dt},  "
       f"real_time = {cfg.total_time} s")
 
-import pyvista as pv
+gif_name   = f"dam_break_{scheme}.gif"
+write_gif  = args.gif or args.no_display
+gif_writer = None
 
-offscreen = args.no_display
-plotter   = _build_plotter(offscreen=offscreen)
-p_actor   = plotter.add_mesh(_particle_mesh(x), show_edges=False)
-f_actor   = plotter.add_mesh(_front_polyline(0.0), color="blue", line_width=0.4)
-txt_actor = plotter.add_text("Time: 0.00 s", position="upper_left",
-                              font_size=12, color="black")
-
-if not offscreen:
-    plotter.show(interactive_update=True)
-
-gif_name = f"dam_break_{scheme}.gif"
-if args.gif or args.no_display:
-    plotter.open_gif(gif_name)
+if write_gif:
+    gif_writer = imageio.get_writer(gif_name, mode="I", fps=10,
+                                    loop=0)          # loop=0 → infinite loop
     print(f"  Writing GIF → {gif_name}")
 
 if args.save_png:
     os.makedirs("results", exist_ok=True)
 
-step       = 0      # output-frame counter  (one frame per 0.01 s)
-step_count = 0      # total substep counter
+# PyVista interactive window (only when NOT headless)
+pv_plotter = p_actor = f_actor = txt_actor = None
+if not args.no_display:
+    pv_plotter = _build_pv_plotter()
+    p_actor    = pv_plotter.add_mesh(_pv_particle_mesh(x), show_edges=False)
+    f_actor    = pv_plotter.add_mesh(_pv_front_polyline(0.0), color="red",
+                                      line_width=1.5)
+    txt_actor  = pv_plotter.add_text("Time: 0.00 s", position="upper_left",
+                                      font_size=12, color="black")
+    pv_plotter.show(interactive_update=True)
+
+step       = 0
+step_count = 0
 t          = 0.0
 start_wall = time.time()
 
@@ -273,27 +333,35 @@ while t < cfg.total_time - 1e-12:
 
     step += 1
 
-    # --- update visualisation ---
-    plotter.remove_actor(p_actor)
-    plotter.remove_actor(f_actor)
-    plotter.remove_actor(txt_actor)
+    # --- matplotlib GIF frame ---
+    if write_gif:
+        frame = _render_frame(x, t)
+        gif_writer.append_data(frame)
 
-    p_actor = plotter.add_mesh(_particle_mesh(x), show_edges=False)
-    f_actor = plotter.add_mesh(_front_polyline(t), color="blue", line_width=0.4)
-    txt_actor = plotter.add_text(
-        f"Time: {t:.2f} s  [{scheme.upper()}]",
-        position="upper_left", font_size=12, color="black",
-    )
-
-    if not offscreen:
-        plotter.update()
-    if args.gif or args.no_display:
-        plotter.write_frame()
+    # --- PNG snapshot ---
     if args.save_png:
-        plotter.screenshot(f"results/{scheme}_t-{t:.3f}.png")
+        frame = _render_frame(x, t)
+        imageio.imwrite(f"results/{scheme}_t-{t:.3f}.png", frame)
+
+    # --- PyVista interactive update ---
+    if pv_plotter is not None:
+        pv_plotter.remove_actor(p_actor)
+        pv_plotter.remove_actor(f_actor)
+        pv_plotter.remove_actor(txt_actor)
+        p_actor   = pv_plotter.add_mesh(_pv_particle_mesh(x), show_edges=False)
+        f_actor   = pv_plotter.add_mesh(_pv_front_polyline(t), color="red",
+                                         line_width=1.5)
+        txt_actor = pv_plotter.add_text(
+            f"Time: {t:.2f} s  [{scheme.upper()}]",
+            position="upper_left", font_size=12, color="black",
+        )
+        pv_plotter.update()
 
     elapsed = time.time() - start_wall
     print(f"  t = {t:.2f} s  ({step_count} steps,  wall {elapsed:.1f} s)")
 
-plotter.close()
+if gif_writer is not None:
+    gif_writer.close()
+if pv_plotter is not None:
+    pv_plotter.close()
 print(f"\nDone.  Total steps: {step_count},  wall time: {time.time()-start_wall:.1f} s")
