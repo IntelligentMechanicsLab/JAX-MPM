@@ -77,6 +77,7 @@ DiffProg-JAX-MPM/
 
 ```python
 from jaxmpm import MPMConfig, initialize_block_particles, build_solver
+import jax.numpy as jnp
 
 cfg = MPMConfig(domain_x=2.0, domain_y=0.4, n_grid_x=200,
                 dt=3e-5, total_time=0.4)
@@ -85,15 +86,14 @@ x0, n_p = initialize_block_particles(cfg, block_x=0.5, block_y=0.3)
 simulate  = build_solver(cfg, n_p)
 
 # friction_bands: raw values for 4 trainable bands (5th fixed to 0)
-import jax.numpy as jnp
 friction_raw = jnp.array([0.0, 0.5, 0.1, 0.2])
 
-rho, v, x, C, P, x_hist = simulate(
-    jnp.ones(n_p) * cfg.rho0,       # density
+F0 = jnp.tile(jnp.eye(2), (n_p, 1, 1))   # deformation gradient (identity)
+F, v, x, C, x_hist = simulate(
+    F0,                              # deformation gradient
     jnp.zeros((n_p, 2)),            # velocity
     x0,                              # position
-    jnp.zeros((n_p, 2, 2)),         # APIC matrix
-    jnp.zeros((n_p, 2, 2)),         # pressure tensor
+    jnp.zeros((n_p, 2, 2)),         # APIC affine matrix
     friction_raw,                    # friction bands
 )
 ```
@@ -105,7 +105,7 @@ import jax
 
 @jax.jit
 def loss_fn(friction_raw):
-    _, _, _, _, _, x_hist = simulate(rho0, v0, x0, C0, P0, friction_raw)
+    _, _, _, _, x_hist = simulate(F0, v0, x0, C0, friction_raw)
     return jnp.sum(jnp.linalg.norm(x_hist - x_observed, axis=-1))
 
 grads = jax.grad(loss_fn)(friction_raw)  # ← automatic differentiation!
@@ -113,6 +113,20 @@ grads = jax.grad(loss_fn)(friction_raw)  # ← automatic differentiation!
 
 See [`examples/dam_break_friction_inversion/`](examples/dam_break_friction_inversion/)
 for a complete, runnable inverse-problem workflow.
+
+---
+
+## Results 📷
+
+### Dam-break validation — APIC / TPIC / FLIP vs Ritter (§5.1.1)
+
+![Dam-break validation: particle snapshots and wave-front comparison for APIC, TPIC and FLIP against the Ritter analytical solution](docs/validation_comparison.png)
+
+### Spatially varying friction inversion (§5.1.3)
+
+![Training convergence: loss vs epoch for the friction inversion problem](docs/inversion_loss.png)
+
+![Friction inversion result: recovered vs true bottom friction field and final particle state](docs/inversion_result.png)
 
 ---
 
