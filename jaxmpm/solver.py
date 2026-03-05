@@ -48,7 +48,7 @@ def build_solver(cfg, n_particles, use_wls=False):
     Returns
     -------
     simulate : callable
-        ``(p_rho, v, x, C, pressure, friction_bands) -> (p_rho, v, x, C, pressure, x_history)``
+        ``(F, v, x, C, friction_bands) -> (F, v, x, C, x_history)``
 
         *friction_bands* is a 1-D array of shape ``(num_bands,)``; the function
         is fully differentiable w.r.t. this argument.
@@ -86,47 +86,49 @@ def build_solver(cfg, n_particles, use_wls=False):
         band_full = jnp.concatenate([band_pos, jnp.array([0.0])])
         friction_field = expand_bands_to_grid(band_full, n_grid_x, n_grid_y)
 
-        p_rho, v, x, C, pressure, x_history = carry
+        F, v, x, C, x_history = carry
 
         if use_wls:
             base, fx, w, dw = compute_weights(x)
             nb_mask, c0, cx, cy = compute_wls(base, x, w)
-            p_rho, pressure, grid_v, grid_m = p2g(
-                p_rho, v, x, C, pressure, base, fx, w, dw, nb_mask, c0, cx, cy
+            F, grid_v, grid_m = p2g(
+                F, v, x, C, base, fx, w, dw, nb_mask, c0, cx, cy
             )
             grid_v_out = grid_op(grid_v, grid_m, friction_field)
             v, x, C = g2p(grid_v_out, v, x, base, fx, w, nb_mask, c0, cx, cy)
         else:
             base, fx, w = compute_weights(x)
-            p_rho, pressure, grid_v, grid_m = p2g(p_rho, v, x, C, pressure, base, fx, w)
+            F, grid_v, grid_m = p2g(F, v, x, C, base, fx, w)
             grid_v_out = grid_op(grid_v, grid_m, friction_field)
             v, x, C = g2p(grid_v_out, v, x, base, fx, w)
 
         x_history = x_history.at[current].set(x)
-        return (p_rho, v, x, C, pressure, x_history), None
+        return (F, v, x, C, x_history), None
 
     # ------------------------------------------------------------------
     # Full simulation
     # ------------------------------------------------------------------
     @jit
-    def simulate(p_rho, v, x, C, pressure, friction_bands_raw):
+    def simulate(F, v, x, C, friction_bands_raw):
         """Run the complete forward simulation.
 
         Parameters
         ----------
+        F : jnp.ndarray, shape ``(n_particles, 2, 2)``
+            Initial deformation gradient (identity matrix for each particle).
         friction_bands_raw : jnp.ndarray, shape ``(num_bands - 1,)``
             *Raw* (pre-softplus) friction values for each vertical strip.
             The last band is fixed to 0.
 
         Returns
         -------
-        Tuple ``(p_rho, v, x, C, pressure, x_history)``
+        Tuple ``(F, v, x, C, x_history)``
         where ``x_history`` is sub-sampled every ``save_every`` steps.
         x_history[0] is the initial position.
         """
         x_history = jnp.zeros((n_steps + 1, n_particles, 2))
         x_history = x_history.at[0].set(x)
-        carry = (p_rho, v, x, C, pressure, x_history)
+        carry = (F, v, x, C, x_history)
 
         for blk in range(n_blocks):
             indices = jnp.arange(blk * block_size + 1, (blk + 1) * block_size + 1)
@@ -143,7 +145,7 @@ def build_solver(cfg, n_particles, use_wls=False):
                 lambda c: jax.lax.scan(substep, c, xs=(indices, bands_tile))
             )(carry)
 
-        p_rho, v, x, C, pressure, x_history = carry
-        return p_rho, v, x, C, pressure, x_history[::save_every]
+        F, v, x, C, x_history = carry
+        return F, v, x, C, x_history[::save_every]
 
     return simulate

@@ -68,8 +68,7 @@ print(f"Number of time-steps: {cfg.n_steps}")
 
 v0 = jnp.zeros((n_particles, 2))
 C0 = jnp.zeros((n_particles, 2, 2))
-rho0 = jnp.ones(n_particles) * cfg.rho0
-pressure0 = jnp.zeros((n_particles, 2, 2))
+F0 = jnp.tile(jnp.eye(2), (n_particles, 1, 1))
 
 # ──────────────────────────────────────────────────────────────────────
 # 3. Ground-truth friction bands (raw → softplus → physical)
@@ -92,7 +91,7 @@ print(f"Kernel: {kernel_tag}")
 
 print("Compiling & running forward simulation …")
 t0 = time.time()
-_, _, _, _, _, x_history = simulate(rho0, v0, x0, C0, pressure0, raw_friction)
+_, _, _, _, x_history = simulate(F0, v0, x0, C0, raw_friction)
 x_history.block_until_ready()
 elapsed = time.time() - t0
 print(f"Done in {elapsed:.1f} s  |  Saved frames: {x_history.shape[0]}")

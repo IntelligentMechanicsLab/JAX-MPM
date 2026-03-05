@@ -130,7 +130,7 @@ def build_p2g_wls(cfg):
                 force  = -p_vol_next[:, None] * jnp.einsum('nab,nb->na', stress, grad_phi)
                 grid_v = grid_v.at[iic, jjc, :].add(dt * force)
 
-        return p_rho_next, pressure, grid_v, grid_m
+        return new_F, grid_v, grid_m
 
     return p2g_wls
 

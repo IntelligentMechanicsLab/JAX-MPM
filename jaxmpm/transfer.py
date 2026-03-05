@@ -14,42 +14,60 @@ from jax import jit
 def build_p2g(cfg):
     """Return a JIT-compiled particle-to-grid transfer function.
 
-    The weakly-compressible equation of state is embedded in this transfer:
-    pressure is updated incrementally from the volumetric strain rate.
+    Uses F-tracking for density (same approach as FLIP):
+
+        F_new = (I + dt·C) @ F      (C ≈ ∇v in APIC)
+        J     = det(F_new)
+        p     = c² · (ρ₀/J − ρ₀)   (absolute weakly-compressible EOS)
     """
-    dt = cfg.dt
-    dh = cfg.dh
-    inv_dh = cfg.inv_dh
-    p_mass = cfg.p_mass
-    rho0 = cfg.rho0
-    modulus = cfg.modulus
+    dt       = cfg.dt
+    dh       = cfg.dh
+    inv_dh   = cfg.inv_dh
+    p_mass   = cfg.p_mass
+    p_vol0   = cfg.p_vol0
+    rho0     = cfg.rho0
+    c_sq     = cfg.c ** 2
+    mu       = cfg.mu
     n_grid_x = cfg.n_grid_x
     n_grid_y = cfg.n_grid_y
-    dim = 2
+    dim      = 2
 
     @jit
-    def p2g(p_rho, v, x, C, pressure, base, fx, w):
+    def p2g(F, v, x, C, base, fx, w):
         """Scatter particle data to the Eulerian grid.
+
+        Parameters
+        ----------
+        F : (n_p, 2, 2)  deformation gradient, initialised to identity
+        C : (n_p, 2, 2)  APIC affine velocity matrix (≈ ∇v)
 
         Returns
         -------
-        p_rho_next : updated particle density
-        pressure   : updated pressure tensor
-        grid_v     : grid momentum
-        grid_m     : grid mass
+        F_new  : updated deformation gradient
+        grid_v : grid momentum
+        grid_m : grid mass
         """
         grid_v = jnp.zeros((n_grid_x + 1, n_grid_y + 1, dim))
         grid_m = jnp.zeros((n_grid_x + 1, n_grid_y + 1))
 
-        vol_strain_inc = jnp.trace(C, axis1=1, axis2=2) * dt
-        p_vol_prev = p_mass / p_rho
-        dJ = 1.0 + vol_strain_inc
-        p_vol_next = p_vol_prev * dJ
-        p_rho_next = p_rho / dJ
+        # F-tracking density / volume update
+        new_F      = (jnp.eye(2) + dt * C) @ F
+        J          = jnp.linalg.det(new_F)
+        p_vol_next = p_vol0 * J
 
-        dp = p_rho_next * modulus / rho0 * vol_strain_inc
-        pressure = pressure - dp[:, None, None] * jnp.eye(2)
-        stress = (-dt * 4.0 * p_vol_next[:, None, None] * inv_dh * inv_dh) * (-pressure)
+        # Absolute weakly-compressible EOS: p = c²·(ρ − ρ₀),  ρ = ρ₀/J
+        pressure_scalar = c_sq * (rho0 / J - rho0)   # (n_p,)
+
+        # Full Newtonian Cauchy stress:
+        #   σ = -p·I  - (2/3)·μ·tr(d)·I  + 2·μ·d
+        # where d = (C + Cᵀ)/2  (APIC: C ≈ ∇v)
+        d = 0.5 * (C + C.transpose(0, 2, 1))
+        cauchy_stress = (
+            -pressure_scalar[:, None, None] * jnp.eye(2)
+            - (2.0 / 3.0 * mu) * jnp.trace(C, axis1=1, axis2=2)[:, None, None] * jnp.eye(2)
+            + 2.0 * mu * d
+        )
+        stress = (-dt * 4.0 * p_vol_next[:, None, None] * inv_dh * inv_dh) * cauchy_stress
         affine = stress + p_mass * C
 
         for i in range(3):
@@ -64,7 +82,7 @@ def build_p2g(cfg):
                 grid_v = grid_v.at[idx[:, 0], idx[:, 1], :].add(contrib)
                 grid_m = grid_m.at[idx[:, 0], idx[:, 1]].add(weight * p_mass)
 
-        return p_rho_next, pressure, grid_v, grid_m
+        return new_F, grid_v, grid_m
 
     return p2g
 

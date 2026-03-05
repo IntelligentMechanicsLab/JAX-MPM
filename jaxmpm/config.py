@@ -53,6 +53,7 @@ class MPMConfig:
     # --- material ---
     rho0: float = 1000.0
     c: float = 35.0
+    mu: float = 0.0        # dynamic viscosity  (0 = inviscid fluid)
     gravity: float = 9.8
 
     # --- particle seeding ---

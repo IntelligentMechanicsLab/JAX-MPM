@@ -141,12 +141,12 @@ if scheme == "apic":
     g2p             = build_g2p(cfg)
     grid_op         = build_grid_op_frictionless(cfg)
 
-    def substep(s, p_rho, v, x, C, pressure):
+    def substep(s, F, v, x, C):
         base, fx, w = compute_weights(x)
-        p_rho, pressure, grid_v, grid_m = p2g(p_rho, v, x, C, pressure, base, fx, w)
+        F, grid_v, grid_m = p2g(F, v, x, C, base, fx, w)
         grid_v_out = grid_op(grid_v, grid_m)
         v, x, C   = g2p(grid_v_out, v, x, base, fx, w)
-        return p_rho, v, x, C, pressure
+        return F, v, x, C
 
 elif scheme == "tpic":
     compute_weights = build_shape_fn_with_grad(cfg)
@@ -154,12 +154,12 @@ elif scheme == "tpic":
     g2p_tpic        = build_g2p_tpic(cfg)
     grid_op         = build_grid_op_frictionless(cfg)
 
-    def substep(s, p_rho, v, x, C, pressure):
+    def substep(s, F, v, x, C):
         base, fx, w, dw = compute_weights(x)
-        p_rho, pressure, grid_v, grid_m = p2g(p_rho, v, x, C, pressure, base, fx, w)
+        F, grid_v, grid_m = p2g(F, v, x, C, base, fx, w)
         grid_v_out = grid_op(grid_v, grid_m)
         v, x, C   = g2p_tpic(grid_v_out, v, x, base, fx, w, dw)
-        return p_rho, v, x, C, pressure
+        return F, v, x, C
 
 else:  # flip
     compute_weights = build_shape_fn_with_grad(cfg)
@@ -181,13 +181,8 @@ else:  # flip
 
 x         = jnp.array(x_np)
 v         = jnp.zeros((n_particles, 2))
-p_rho     = jnp.ones(n_particles) * cfg.rho0
-pressure  = jnp.zeros((n_particles, 2, 2))
+F         = jnp.tile(jnp.eye(2), (n_particles, 1, 1))  # deformation gradient
 state_mat = jnp.zeros((n_particles, 2, 2))   # C (APIC/TPIC) or Grad_v (FLIP)
-
-# FLIP-specific initial state: deformation gradient F starts as identity
-if scheme == "flip":
-    flip_F = jnp.tile(jnp.eye(2), (n_particles, 1, 1))
 
 # ---------------------------------------------------------------------------
 # Matplotlib frame renderer  (reliable headless GIF via imageio)
@@ -328,12 +323,7 @@ while t < cfg.total_time - 1e-12:
 
     while t < t_target - 1e-10:
         step_count += 1
-        if scheme == "flip":
-            flip_F, v, x, state_mat = substep(step_count, flip_F, v, x, state_mat)
-        else:
-            p_rho, v, x, state_mat, pressure = substep(
-                step_count, p_rho, v, x, state_mat, pressure
-            )
+        F, v, x, state_mat = substep(step_count, F, v, x, state_mat)
         t += cfg.dt
 
     step += 1

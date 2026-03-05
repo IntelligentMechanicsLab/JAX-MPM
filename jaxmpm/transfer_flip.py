@@ -55,6 +55,7 @@ def build_p2g_flip(cfg):
     p_vol0   = cfg.p_vol0       # initial particle volume = (dh/2)^2
     rho0     = cfg.rho0
     c_sq     = cfg.c ** 2       # speed of sound squared
+    mu       = cfg.mu           # dynamic viscosity (0 = inviscid)
     n_grid_x = cfg.n_grid_x
     n_grid_y = cfg.n_grid_y
     dim      = 2
@@ -86,7 +87,16 @@ def build_p2g_flip(cfg):
 
         # Absolute weakly-compressible EOS: p = c^2*(rho - rho0),  rho = rho0/J
         pressure_each = c_sq * (rho0 / J - rho0)           # (n_p,)  scalar
-        stress = -pressure_each[:, None, None] * jnp.eye(2)    # (n_p, 2, 2)
+
+        # Full Newtonian Cauchy stress:
+        #   σ = -p·I  - (2/3)·μ·tr(d)·I  + 2·μ·d
+        # For FLIP, d = (Grad_v + Grad_v^T)/2  (velocity gradient from previous G2P)
+        d = 0.5 * (Grad_v + Grad_v.transpose(0, 2, 1))
+        stress = (
+            -pressure_each[:, None, None] * jnp.eye(2)
+            - (2.0 / 3.0 * mu) * jnp.trace(Grad_v, axis1=1, axis2=2)[:, None, None] * jnp.eye(2)
+            + 2.0 * mu * d
+        )
 
         for i in range(3):
             for j in range(3):
