@@ -47,23 +47,30 @@ pip install -r requirements.txt
 DiffProg-JAX-MPM/
 ├── jaxmpm/                         # Core solver library
 │   ├── __init__.py
-│   ├── config.py                   #   Simulation configuration (dataclass)
-│   ├── particles.py                #   Particle initialisation
-│   ├── shape_functions.py          #   Quadratic B-spline weights (boundary-aware)
-│   ├── transfer.py                 #   P2G and G2P transfers (APIC)
-│   ├── boundary.py                 #   Boundary conditions (Coulomb friction)
-│   └── solver.py                   #   Time-stepping & scan-based integration
+│   ├── config.py                   #   Simulation configuration (MPMConfig dataclass)
+│   ├── particles.py                #   Particle initialisation utilities
+│   ├── shape_functions.py          #   Quadratic B-spline weights (APIC / TPIC)
+│   ├── shape_functions_wls.py      #   WLS boundary-corrected shape functions
+│   ├── transfer.py                 #   P2G & G2P transfers — APIC
+│   ├── transfer_tpic.py            #   G2P transfer — TPIC (Taylor PIC)
+│   ├── transfer_flip.py            #   P2G & G2P transfers — FLIP/PIC blend
+│   ├── transfer_wls.py             #   P2G & G2P transfers — WLS boundary correction
+│   ├── boundary.py                 #   Grid operations: Coulomb friction, frictionless
+│   ├── solver.py                   #   Differentiable time-stepper (scan + remat)
+│   └── solver_wls.py               #   Convenience wrapper: solver with WLS kernels
 │
 ├── examples/                       # Reproducing paper results
-│   ├── dam_break_friction_inversion/   §5.1.3 — spatially varying friction
+│   ├── dam_break_friction_inversion/   §5.1.3 — spatially varying friction inversion
 │   │   ├── README.md
-│   │   ├── generate_data.py        #   Forward sim → ground truth
-│   │   ├── train.py                #   Inverse solve
+│   │   ├── generate_data.py        #   Forward sim → ground-truth trajectory
+│   │   ├── train.py                #   Gradient-based friction inversion (APIC kernel)
+│   │   ├── train_wls.py            #   Same inversion with WLS-corrected kernel
 │   │   └── plot_results.py         #   Visualisation
 │   └── dam_break_validation/           §5.1.1 — transfer scheme comparison
 │       ├── README.md
-│       └── run_validation.py       #   APIC / TPIC / FLIP vs Ritter solution
+│       └── run_validation.py       #   APIC / TPIC / FLIP vs Ritter analytical solution
 │
+├── docs/                           # Figures used in this README
 ├── requirements.txt
 ├── LICENSE
 └── README.md                       # ← you are here
@@ -121,6 +128,10 @@ for a complete, runnable inverse-problem workflow.
 ### Dam-break validation — APIC / TPIC / FLIP vs Ritter (§5.1.1)
 
 ![Dam-break validation: particle snapshots and wave-front comparison for APIC, TPIC and FLIP against the Ritter analytical solution](docs/validation_comparison.png)
+
+| APIC | TPIC | FLIP |
+|:----:|:----:|:----:|
+| ![APIC animation](examples/dam_break_validation/dam_break_apic.gif) | ![TPIC animation](examples/dam_break_validation/dam_break_tpic.gif) | ![FLIP animation](examples/dam_break_validation/dam_break_flip.gif) |
 
 ### Spatially varying friction inversion (§5.1.3)
 
