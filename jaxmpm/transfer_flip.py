@@ -3,21 +3,24 @@ FLIP (Fluid-Implicit-Particle) transfer operations.
 
 FLIP differs from APIC in three ways:
 
-1. **P2G** — pure momentum scatter (no affine term); internal forces are
-   accumulated in a separate force grid ``grid_f`` via the weak form
-   ``f_i = -V · σ · ∇N_i``.
+1. **P2G** — the deformation gradient ``F`` is tracked explicitly (initialised
+   to ``I``); particle volume and density are recomputed each step from
+   ``J = det(F)``; pressure is computed fresh via the absolute EOS
+   ``p = c^2 * (rho0/J - rho0)``; internal forces accumulate in a separate
+   force grid ``grid_f`` via the weak form ``f = -V * sigma * grad_N``.
 
 2. **Grid op** — mass-normalised velocity *and* acceleration grids are both
    returned so that the G2P step can perform the FLIP velocity blend.
 
 3. **G2P** — velocity is updated via the FLIP blend
-   ``v_new = v_old + Σ a_i · w_i · dt``  (accumulate acceleration increment),
+   ``v_new = v_old + sum_i a_i * w_i * dt``  (accumulate acceleration increment),
    while position is advected with the PIC velocity for stability.
    The velocity-gradient tensor ``Grad_v`` is computed via shape-fn gradients.
 
-The state matrix for FLIP is called ``Grad_v`` (shape ``(n_p, 2, 2)``) and
-plays the same role as ``C`` in APIC — it stores the particle velocity
-gradient used in the next P2G step to compute volumetric strain.
+The persistent particle state for FLIP is ``(F, v, x, Grad_v)`` where ``F``
+is the per-particle deformation gradient (``n_p x 2 x 2``, initialised to
+``I``).  Unlike APIC, pressure is **not** carried as state -- it is
+recomputed fresh every step from the current ``J``.
 """
 
 import jax.numpy as jnp
@@ -26,6 +29,13 @@ from jax import jit
 
 def build_p2g_flip(cfg):
     """Return a JIT-compiled FLIP particle-to-grid transfer function.
+
+    Tracks the deformation gradient ``F`` and uses the absolute
+    weakly-compressible EOS (same as the original FLIP reference code)::
+
+        F_new = (I + dt * Grad_v) @ F
+        J     = det(F_new)
+        p     = c^2 * (rho0/J - rho0)
 
     P2G scatters pure momentum (no affine) to ``grid_v`` and accumulates
     internal forces in ``grid_f`` via the divergence theorem.
@@ -37,45 +47,46 @@ def build_p2g_flip(cfg):
     Returns
     -------
     p2g_flip : callable
-        ``(p_rho, v, x, Grad_v, pressure, base, fx, w, dw)``
-        ``-> (p_rho_next, pressure, grid_v, grid_m, grid_f)``
+        ``(F, v, x, Grad_v, base, fx, w, dw)``
+        ``-> (F_new, grid_v, grid_m, grid_f)``
     """
     dt       = cfg.dt
-    dh       = cfg.dh
-    inv_dh   = cfg.inv_dh
     p_mass   = cfg.p_mass
+    p_vol0   = cfg.p_vol0       # initial particle volume = (dh/2)^2
     rho0     = cfg.rho0
-    modulus  = cfg.modulus
+    c_sq     = cfg.c ** 2       # speed of sound squared
     n_grid_x = cfg.n_grid_x
     n_grid_y = cfg.n_grid_y
     dim      = 2
 
     @jit
-    def p2g_flip(p_rho, v, x, Grad_v, pressure, base, fx, w, dw):
+    def p2g_flip(F, v, x, Grad_v, base, fx, w, dw):
         """Scatter particle data to the grid (FLIP formulation).
+
+        Parameters
+        ----------
+        F      : deformation gradient  (n_p, 2, 2), initialised to identity
+        Grad_v : velocity gradient gathered in the previous G2P step (n_p, 2, 2)
 
         Returns
         -------
-        p_rho_next : updated particle density
-        pressure   : updated pressure tensor
-        grid_v     : grid momentum  (mass × velocity, no affine)
-        grid_m     : grid mass
-        grid_f     : grid internal force  (from stress divergence)
+        F_new  : updated deformation gradient  (n_p, 2, 2)
+        grid_v : grid momentum  (mass x velocity, no affine term)
+        grid_m : grid mass
+        grid_f : grid internal force  (from stress divergence)
         """
         grid_v = jnp.zeros((n_grid_x + 1, n_grid_y + 1, dim))
         grid_m = jnp.zeros((n_grid_x + 1, n_grid_y + 1))
         grid_f = jnp.zeros((n_grid_x + 1, n_grid_y + 1, dim))
 
-        # Density / volume update (same equation of state as APIC)
-        vol_strain = jnp.trace(Grad_v, axis1=1, axis2=2) * dt
-        p_vol_prev = p_mass / p_rho
-        dJ          = 1.0 + vol_strain
-        p_vol_next  = p_vol_prev * dJ
-        p_rho_next  = p_rho / dJ
+        # Update deformation gradient: F_new = (I + dt*grad_v) @ F
+        new_F      = (jnp.eye(2) + dt * Grad_v) @ F
+        J          = jnp.linalg.det(new_F)
+        p_vol_next = p_vol0 * J
 
-        dp       = p_rho_next * modulus / rho0 * vol_strain
-        pressure = pressure - dp[:, None, None] * jnp.eye(2)
-        stress   = -pressure   # mu = 0 (inviscid fluid)
+        # Absolute weakly-compressible EOS: p = c^2*(rho - rho0),  rho = rho0/J
+        pressure_each = c_sq * (rho0 / J - rho0)           # (n_p,)  scalar
+        stress = -pressure_each[:, None, None] * jnp.eye(2)    # (n_p, 2, 2)
 
         for i in range(3):
             for j in range(3):
@@ -91,13 +102,13 @@ def build_p2g_flip(cfg):
                     weight[:, None] * p_mass * v
                 )
                 grid_m = grid_m.at[idx[:, 0], idx[:, 1]].add(weight * p_mass)
-                # Internal force via divergence theorem:  f = -V · σ · ∇N
+                # Internal force via divergence theorem:  f = -V * sigma * grad_N
                 internal_force = -p_vol_next[:, None] * jnp.einsum(
                     "ijk,ik->ij", stress, dweight
                 )
                 grid_f = grid_f.at[idx[:, 0], idx[:, 1], :].add(internal_force)
 
-        return p_rho_next, pressure, grid_v, grid_m, grid_f
+        return new_F, grid_v, grid_m, grid_f
 
     return p2g_flip
 
@@ -179,12 +190,12 @@ def build_g2p_flip(cfg):
     """Return a JIT-compiled FLIP grid-to-particle transfer function.
 
     Velocity is updated via the FLIP blend
-    ``v_new = v_old + Σ_i  w_i · a_i · dt``
-    and position is advected with the PIC velocity (sum of ``w_i · v_i``)
+    ``v_new = v_old + sum_i  w_i * a_i * dt``
+    and position is advected with the PIC velocity (sum of ``w_i * v_i``)
     for numerical stability.
 
     The velocity-gradient tensor ``Grad_v`` is computed from
-    ``Grad_v = Σ_i  v_i ⊗ ∇N_i``.
+    ``Grad_v = sum_i  v_i outer grad_N_i``.
 
     Parameters
     ----------
@@ -211,7 +222,7 @@ def build_g2p_flip(cfg):
         """
         n_p       = x.shape[0]
         new_vpic  = jnp.zeros((n_p, dim))
-        new_vflip = v    # FLIP: start from old velocity, add Δv = Σ a_i·w_i·dt
+        new_vflip = v    # FLIP: start from old velocity, add dv = sum a_i*w_i*dt
         Grad_v    = jnp.zeros((n_p, dim, dim))
 
         for i in range(3):

@@ -167,14 +167,12 @@ else:  # flip
     grid_op_flip    = build_grid_op_flip(cfg)
     g2p_flip        = build_g2p_flip(cfg)
 
-    def substep(s, p_rho, v, x, Grad_v, pressure):
+    def substep(s, F, v, x, Grad_v):
         base, fx, w, dw = compute_weights(x)
-        p_rho, pressure, grid_v, grid_m, grid_f = p2g_flip(
-            p_rho, v, x, Grad_v, pressure, base, fx, w, dw
-        )
+        F, grid_v, grid_m, grid_f = p2g_flip(F, v, x, Grad_v, base, fx, w, dw)
         grid_v_out, grid_a_out = grid_op_flip(grid_v, grid_m, grid_f)
         v, x, Grad_v = g2p_flip(grid_v_out, grid_a_out, v, x, base, fx, w, dw)
-        return p_rho, v, x, Grad_v, pressure
+        return F, v, x, Grad_v
 
 
 # ---------------------------------------------------------------------------
@@ -186,6 +184,10 @@ v         = jnp.zeros((n_particles, 2))
 p_rho     = jnp.ones(n_particles) * cfg.rho0
 pressure  = jnp.zeros((n_particles, 2, 2))
 state_mat = jnp.zeros((n_particles, 2, 2))   # C (APIC/TPIC) or Grad_v (FLIP)
+
+# FLIP-specific initial state: deformation gradient F starts as identity
+if scheme == "flip":
+    flip_F = jnp.tile(jnp.eye(2), (n_particles, 1, 1))
 
 # ---------------------------------------------------------------------------
 # Matplotlib frame renderer  (reliable headless GIF via imageio)
@@ -326,9 +328,12 @@ while t < cfg.total_time - 1e-12:
 
     while t < t_target - 1e-10:
         step_count += 1
-        p_rho, v, x, state_mat, pressure = substep(
-            step_count, p_rho, v, x, state_mat, pressure
-        )
+        if scheme == "flip":
+            flip_F, v, x, state_mat = substep(step_count, flip_F, v, x, state_mat)
+        else:
+            p_rho, v, x, state_mat, pressure = substep(
+                step_count, p_rho, v, x, state_mat, pressure
+            )
         t += cfg.dt
 
     step += 1
