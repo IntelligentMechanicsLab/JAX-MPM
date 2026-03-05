@@ -85,3 +85,86 @@ def build_shape_fn(cfg):
         return base, fx, w
 
     return compute_weights
+
+
+def build_shape_fn_with_grad(cfg):
+    """Return a JIT-compiled ``compute_weights_with_grad(x)`` closure.
+
+    Same as :func:`build_shape_fn` but also returns shape-function gradients
+    ``dw``, which are required for FLIP and TPIC transfers.
+
+    Returns
+    -------
+    compute_weights_with_grad : callable
+        ``(x) -> (base, fx, w, dw)``
+
+        * ``base`` – integer base-node index, shape ``(n_p, 2)``
+        * ``fx``   – fractional position inside the cell, shape ``(n_p, 2)``
+        * ``w``    – shape-function values, shape ``(3, n_p, 2)``
+        * ``dw``   – shape-function spatial gradients, shape ``(3, n_p, 2)``
+    """
+    n_grid_x = cfg.n_grid_x
+    n_grid_y = cfg.n_grid_y
+    inv_dh   = cfg.inv_dh
+
+    @jit
+    def _btype(base):
+        bx = jnp.where(base[:, 0] == -1, 1,
+              jnp.where(base[:, 0] == n_grid_x - 1, 2, 0))
+        by = jnp.where(base[:, 1] == -1, 1,
+              jnp.where(base[:, 1] == n_grid_y - 1, 2, 0))
+        return jnp.stack([bx, by], axis=-1)  # (n_p, 2)
+
+    @jit
+    def compute_weights_with_grad(x):
+        n_p  = x.shape[0]
+        base = jnp.floor(x * inv_dh - 0.5).astype(jnp.int32)
+        fx   = x * inv_dh - base
+
+        # --- weights (same as build_shape_fn) ---
+        w0 = jnp.array([0.5 * (1.5 - fx) ** 2,
+                         0.75 - (fx - 1.0) ** 2,
+                         0.5 * (fx - 0.5) ** 2])
+        w1 = jnp.array([jnp.zeros_like(fx), 1.0 - (fx - 1.0), fx - 1.0])
+        w2 = jnp.array([1.0 - fx, fx, jnp.zeros_like(fx)])
+
+        btype  = _btype(base)
+        all_wx = jnp.stack((w0[:, :, 0], w1[:, :, 0], w2[:, :, 0]), axis=-1)
+        all_wy = jnp.stack((w0[:, :, 1], w1[:, :, 1], w2[:, :, 1]), axis=-1)
+        sel_wx = all_wx[:, jnp.arange(n_p), btype[:, 0]]
+        sel_wy = all_wy[:, jnp.arange(n_p), btype[:, 1]]
+        w      = jnp.stack((sel_wx, sel_wy), axis=-1)  # (3, n_p, 2)
+
+        # --- shape-function gradients ---
+        # Interior quadratic B-spline derivatives
+        dw_0 = -(1.5 - fx) * inv_dh
+        dw_1 = -2.0 * (fx - 1.0) * inv_dh
+        dw_2 =  (fx - 0.5) * inv_dh
+
+        dwx0 = jnp.array([dw_0[:, 0], dw_1[:, 0], dw_2[:, 0]])
+        dwy0 = jnp.array([dw_0[:, 1], dw_1[:, 1], dw_2[:, 1]])
+        dw0  = jnp.stack((dwx0, dwy0), axis=-1)   # (3, n_p, 2)
+
+        # Near left/bottom (base == -1): boundary-corrected dw
+        dw1 = jnp.array([
+            jnp.zeros_like(fx),
+            -jnp.ones_like(fx) * inv_dh,
+             jnp.ones_like(fx) * inv_dh,
+        ])
+
+        # Near right/top (base == n_grid-1): boundary-corrected dw
+        dw2 = jnp.array([
+            -jnp.ones_like(fx) * inv_dh,
+             jnp.ones_like(fx) * inv_dh,
+             jnp.zeros_like(fx),
+        ])
+
+        all_dwx = jnp.stack((dw0[:, :, 0], dw1[:, :, 0], dw2[:, :, 0]), axis=-1)
+        all_dwy = jnp.stack((dw0[:, :, 1], dw1[:, :, 1], dw2[:, :, 1]), axis=-1)
+        sel_dwx = all_dwx[:, jnp.arange(n_p), btype[:, 0]]
+        sel_dwy = all_dwy[:, jnp.arange(n_p), btype[:, 1]]
+        dw      = jnp.stack((sel_dwx, sel_dwy), axis=-1)  # (3, n_p, 2)
+
+        return base, fx, w, dw
+
+    return compute_weights_with_grad

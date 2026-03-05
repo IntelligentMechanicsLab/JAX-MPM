@@ -96,3 +96,56 @@ def build_grid_op(cfg):
         return jnp.stack((vx, vy), axis=-1)
 
     return grid_op
+
+
+def build_grid_op_frictionless(cfg):
+    """Return a JIT-compiled frictionless grid-op for validation / forward runs.
+
+    Simpler than :func:`build_grid_op`: no Coulomb friction, no top-wall BC —
+    just a slip bottom (zero normal velocity) and no-slip side walls.
+
+    Suitable for the dam-break validation example where ``μ = 0``.
+
+    Returns
+    -------
+    grid_op_frictionless : callable
+        ``(grid_v, grid_m) -> grid_v_out``
+    """
+    dt       = cfg.dt
+    dh       = cfg.dh
+    gravity  = cfg.gravity
+    n_grid_x = cfg.n_grid_x
+    n_grid_y = cfg.n_grid_y
+    domain_x = cfg.domain_x
+
+    ones        = jnp.ones((n_grid_x + 1, n_grid_y + 1), dtype=bool)
+    mask_left   = (jnp.arange(n_grid_x + 1) * dh <= 0.0)[:, None] * ones
+    mask_right  = (jnp.arange(n_grid_x + 1) * dh >= domain_x)[:, None] * ones
+    mask_bottom = (jnp.arange(n_grid_y + 1) * dh <= 0.0)[None, :] * ones
+
+    @jit
+    def grid_op_frictionless(grid_v, grid_m):
+        """Frictionless grid update: momentum → velocity, gravity, slip BCs.
+
+        Parameters
+        ----------
+        grid_v : jnp.ndarray  (n_grid_x+1, n_grid_y+1, 2)  grid momentum
+        grid_m : jnp.ndarray  (n_grid_x+1, n_grid_y+1)      grid mass
+
+        Returns
+        -------
+        grid_v_out : jnp.ndarray  (n_grid_x+1, n_grid_y+1, 2)
+        """
+        inv_m = 1.0 / (grid_m + 1e-12)
+        v_out = jnp.where(
+            grid_m[:, :, None] > 0,
+            inv_m[:, :, None] * grid_v,
+            jnp.zeros_like(grid_v),
+        )
+        v_out = v_out.at[:, :, 1].add(-dt * gravity)
+
+        vx = jnp.where(mask_left | mask_right, 0.0, v_out[..., 0])
+        vy = jnp.where(mask_bottom, 0.0, v_out[..., 1])
+        return jnp.stack((vx, vy), axis=-1)
+
+    return grid_op_frictionless
