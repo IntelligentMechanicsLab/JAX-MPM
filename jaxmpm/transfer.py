@@ -71,9 +71,11 @@ def build_p2g(cfg):
 
 def build_g2p(cfg):
     """Return a JIT-compiled grid-to-particle transfer function (APIC)."""
-    dt = cfg.dt
-    dh = cfg.dh
-    dim = 2
+    dt       = cfg.dt
+    dh       = cfg.dh
+    n_grid_x = cfg.n_grid_x
+    n_grid_y = cfg.n_grid_y
+    dim      = 2
 
     @jit
     def g2p(grid_v, v, x, base, fx, w):

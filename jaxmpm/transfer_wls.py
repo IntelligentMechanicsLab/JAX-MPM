@@ -49,8 +49,13 @@ def build_p2g_wls(cfg):
     @jit
     def p2g_wls(p_rho, v, x, C, pressure,
                 base, fx, w, dw,
-                nb_mask, c0, cx, cy, C2, C3):
+                nb_mask, c0, cx, cy):
         """WLS-corrected scatter from particles to grid.
+
+        WLS correction is applied to the *weights* (ensuring partition of unity
+        near walls).  The *force* term always uses the standard analytic B-spline
+        gradient: the corrected gradient (from inv(A)) is numerically unstable
+        at domain corners where only 2×2 stencil nodes are active.
 
         Parameters
         ----------
@@ -65,8 +70,6 @@ def build_p2g_wls(cfg):
         dw        : (3, n_p, 2) standard B-spline gradients [m⁻¹]
         nb_mask   : (n_p,)      True = particle is near a wall node
         c0,cx,cy  : (n_p,)      WLS weight-correction scalars
-        C2        : (n_p, 2)    WLS gradient-correction vector
-        C3        : (n_p, 2,2)  WLS gradient-correction matrix
 
         Returns
         -------
@@ -107,16 +110,13 @@ def build_p2g_wls(cfg):
                 phi_cor = jnp.maximum(0.0, phi_cor)
                 weight  = jnp.where(nb_mask, phi_cor, phi_ij) * am
 
-                # -- WLS-corrected gradient of shape function --
-                # Standard analytic gradient:  ∂φ_ij/∂x_p
-                grad_std = jnp.stack([
-                    dw[i, :, 0] * w[j, :, 1],   # ∂/∂x
-                    w[i, :, 0] * dw[j, :, 1],   # ∂/∂y
-                ], axis=-1)  # (n_p, 2)
-
-                # Corrected gradient: (C2 + C3 @ r) · φ_ij
-                grad_cor = (C2 + jnp.einsum('nab,nb->na', C3, r)) * phi_ij[:, None]
-                grad_phi = jnp.where(nb_mask[:, None], grad_cor, grad_std) * am[:, None]
+                # Standard analytic B-spline gradient (always used for force).
+                # The WLS-corrected gradient via inv(A) is ill-conditioned at
+                # domain corners and is omitted for forward stability.
+                grad_phi = jnp.stack([
+                    dw[i, :, 0] * w[j, :, 1],   # ∂N/∂x
+                    w[i, :, 0] * dw[j, :, 1],   # ∂N/∂y
+                ], axis=-1) * am[:, None]        # (n_p, 2)
 
                 dpos = (jnp.array([i, j], dtype=float) - fx) * dh   # (n_p, 2)
 

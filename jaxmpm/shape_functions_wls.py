@@ -49,14 +49,18 @@ def build_shape_fn_wls(cfg):
         * ``dw``   – weight gradients [m⁻¹], shape ``(3, n_p, 2)``
 
     compute_wls : callable
-        ``compute_wls(base, x, w) -> (nb_mask, c0, cx, cy, C2, C3)``
+        ``compute_wls(base, x, w) -> (nb_mask, c0, cx, cy)``
 
-        WLS correction data.
+        WLS weight-correction data.
 
         * ``nb_mask`` – ``(n_p,)`` bool: True if particle touches a wall node
-        * ``c0, cx, cy`` – ``(n_p,)`` weight-correction scalars
-        * ``C2`` – ``(n_p, 2)`` gradient-correction vector
-        * ``C3`` – ``(n_p, 2, 2)`` gradient-correction matrix
+        * ``c0, cx, cy`` – ``(n_p,)`` WLS weight-correction scalars
+
+        Gradient-correction blocks (C2, C3) are intentionally omitted: the
+        inverted WLS moment matrix is ill-conditioned at domain corners (where
+        only 2×2 stencil nodes are active), causing the corrected gradients to
+        be numerically enormous and the explicit P2G force to blow up.
+        Standard B-spline gradients are used for the force term instead.
     """
     n_grid_x = cfg.n_grid_x
     n_grid_y = cfg.n_grid_y
@@ -163,13 +167,12 @@ def build_shape_fn_wls(cfg):
         coeff = jsl.solve(A, b[..., None])[..., 0]   # (n_p, 3)
         c0, cx_c, cy_c = coeff[:, 0], coeff[:, 1], coeff[:, 2]
 
-        # ---- 4. Gradient-correction blocks (C2, C3) ----
-        # invA[:, 1:, 0]  -> C2 (n_p, 2)   first column, rows 1-2
-        # invA[:, 1:, 1:] -> C3 (n_p, 2,2) sub-block, rows 1-2, cols 1-2
-        invA = jnp.linalg.inv(A)  # (n_p, 3, 3)
-        C2   = invA[:, 1:, 0]      # (n_p, 2)
-        C3   = invA[:, 1:, 1:]     # (n_p, 2, 2)
-
-        return nb, c0, cx_c, cy_c, C2, C3
+        # NOTE: gradient-correction blocks (C2, C3 from inv(A)) are intentionally
+        # omitted.  Near domain corners only 2×2 stencil nodes are active; inv(A)
+        # becomes numerically large, producing enormous corrected gradients that
+        # destabilise the explicit force scatter in P2G.
+        # The weight-correction scalars (c0, cx, cy) alone already enforce the
+        # partition-of-unity condition near walls and are well-conditioned.
+        return nb, c0, cx_c, cy_c
 
     return compute_weights, compute_wls

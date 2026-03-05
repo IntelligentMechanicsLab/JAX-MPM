@@ -4,6 +4,9 @@ High-level time-stepping solver.
 ``build_solver`` assembles all MPM kernels (shape functions, P2G, grid
 operations, G2P) into a single differentiable ``simulate`` function that can
 be passed directly to ``jax.grad``.
+
+Set ``use_wls=True`` to use WLS boundary-corrected shape functions instead
+of the default quadratic B-spline kernels.
 """
 
 import jax
@@ -11,7 +14,9 @@ import jax.numpy as jnp
 from jax import jit
 
 from jaxmpm.shape_functions import build_shape_fn
+from jaxmpm.shape_functions_wls import build_shape_fn_wls
 from jaxmpm.transfer import build_p2g, build_g2p
+from jaxmpm.transfer_wls import build_p2g_wls, build_g2p_wls
 from jaxmpm.boundary import build_grid_op
 
 
@@ -29,13 +34,16 @@ def expand_bands_to_grid(band_values, n_grid_x, n_grid_y, num_bands=5):
     return friction_map
 
 
-def build_solver(cfg, n_particles):
+def build_solver(cfg, n_particles, use_wls=False):
     """Assemble the full differentiable MPM time-stepper.
 
     Parameters
     ----------
     cfg : MPMConfig
     n_particles : int
+    use_wls : bool, optional
+        If ``True``, use WLS boundary-corrected shape functions and transfers.
+        Default is ``False`` (standard quadratic B-spline).
 
     Returns
     -------
@@ -45,9 +53,15 @@ def build_solver(cfg, n_particles):
         *friction_bands* is a 1-D array of shape ``(num_bands,)``; the function
         is fully differentiable w.r.t. this argument.
     """
-    compute_weights = build_shape_fn(cfg)
-    p2g = build_p2g(cfg)
-    g2p = build_g2p(cfg)
+    if use_wls:
+        compute_weights, compute_wls = build_shape_fn_wls(cfg)
+        p2g    = build_p2g_wls(cfg)
+        g2p    = build_g2p_wls(cfg)
+    else:
+        compute_weights = build_shape_fn(cfg)
+        compute_wls     = None
+        p2g             = build_p2g(cfg)
+        g2p             = build_g2p(cfg)
     grid_op = build_grid_op(cfg)
 
     n_steps = cfg.n_steps
@@ -74,10 +88,19 @@ def build_solver(cfg, n_particles):
 
         p_rho, v, x, C, pressure, x_history = carry
 
-        base, fx, w = compute_weights(x)
-        p_rho, pressure, grid_v, grid_m = p2g(p_rho, v, x, C, pressure, base, fx, w)
-        grid_v_out = grid_op(grid_v, grid_m, friction_field)
-        v, x, C = g2p(grid_v_out, v, x, base, fx, w)
+        if use_wls:
+            base, fx, w, dw = compute_weights(x)
+            nb_mask, c0, cx, cy = compute_wls(base, x, w)
+            p_rho, pressure, grid_v, grid_m = p2g(
+                p_rho, v, x, C, pressure, base, fx, w, dw, nb_mask, c0, cx, cy
+            )
+            grid_v_out = grid_op(grid_v, grid_m, friction_field)
+            v, x, C = g2p(grid_v_out, v, x, base, fx, w, nb_mask, c0, cx, cy)
+        else:
+            base, fx, w = compute_weights(x)
+            p_rho, pressure, grid_v, grid_m = p2g(p_rho, v, x, C, pressure, base, fx, w)
+            grid_v_out = grid_op(grid_v, grid_m, friction_field)
+            v, x, C = g2p(grid_v_out, v, x, base, fx, w)
 
         x_history = x_history.at[current].set(x)
         return (p_rho, v, x, C, pressure, x_history), None

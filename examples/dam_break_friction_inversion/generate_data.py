@@ -21,6 +21,7 @@ Output
     data/ground_truth_trajectory.npy   – shape (n_saved_frames, n_particles, 2)
 """
 
+import argparse
 import os
 import sys
 import time
@@ -35,6 +36,11 @@ jax.config.update("jax_enable_x64", True)
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", ".."))
 
 from jaxmpm import MPMConfig, initialize_block_particles, build_solver
+
+parser = argparse.ArgumentParser(description="Generate ground-truth MPM trajectory")
+parser.add_argument("--wls", action="store_true",
+                    help="Use WLS boundary-corrected solver")
+args = parser.parse_args()
 
 # ──────────────────────────────────────────────────────────────────────
 # 1. Configuration
@@ -80,7 +86,9 @@ raw_friction = jnp.log(jnp.exp(target_friction + 1e-8) - 1.0 + 1e-8)
 # ──────────────────────────────────────────────────────────────────────
 # 4. Run forward simulation
 # ──────────────────────────────────────────────────────────────────────
-simulate = build_solver(cfg, n_particles)
+simulate = build_solver(cfg, n_particles, use_wls=args.wls)
+kernel_tag = "wls" if args.wls else "standard"
+print(f"Kernel: {kernel_tag}")
 
 print("Compiling & running forward simulation …")
 t0 = time.time()
@@ -93,6 +101,7 @@ print(f"Done in {elapsed:.1f} s  |  Saved frames: {x_history.shape[0]}")
 # 5. Save
 # ──────────────────────────────────────────────────────────────────────
 os.makedirs("data", exist_ok=True)
-out_path = os.path.join("data", "ground_truth_trajectory.npy")
+fname = "ground_truth_trajectory_wls.npy" if args.wls else "ground_truth_trajectory.npy"
+out_path = os.path.join("data", fname)
 np.save(out_path, np.array(x_history))
 print(f"Saved ground-truth trajectory → {out_path}")

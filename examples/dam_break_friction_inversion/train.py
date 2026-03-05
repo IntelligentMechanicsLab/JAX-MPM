@@ -53,9 +53,12 @@ def parse_args():
                    help="Decay interval (epochs)")
     p.add_argument("--seed", type=int, default=0,
                    help="Random seed for observation sampling")
-    p.add_argument("--data", type=str,
-                   default="data/ground_truth_trajectory.npy",
-                   help="Path to ground-truth trajectory (.npy)")
+    p.add_argument("--data", type=str, default=None,
+                   help="Path to ground-truth trajectory (.npy). "
+                        "Defaults to data/ground_truth_trajectory_wls.npy "
+                        "when --wls is set, else data/ground_truth_trajectory.npy")
+    p.add_argument("--wls", action="store_true",
+                   help="Use WLS boundary-corrected solver")
     return p.parse_args()
 
 
@@ -85,15 +88,19 @@ def main():
     # ------------------------------------------------------------------
     # 2. Load ground-truth & sample observation indices
     # ------------------------------------------------------------------
+    if args.data is None:
+        args.data = ("data/ground_truth_trajectory_wls.npy" if args.wls
+                     else "data/ground_truth_trajectory.npy")
     ground_truth = jnp.array(np.load(args.data))
     key = jax.random.PRNGKey(args.seed)
     obs_idx = jax.random.choice(key, n_particles, (args.n_obs,), replace=False)
-    print(f"Particles: {n_particles}  |  Observations: {args.n_obs}")
+    kernel_tag = "wls" if args.wls else "standard"
+    print(f"Particles: {n_particles}  |  Observations: {args.n_obs}  |  Kernel: {kernel_tag}")
 
     # ------------------------------------------------------------------
     # 3. Build differentiable solver
     # ------------------------------------------------------------------
-    simulate = build_solver(cfg, n_particles)
+    simulate = build_solver(cfg, n_particles, use_wls=args.wls)
 
     # ------------------------------------------------------------------
     # 4. Loss function
@@ -126,7 +133,7 @@ def main():
     # ------------------------------------------------------------------
     # 6. Training loop
     # ------------------------------------------------------------------
-    run_name = f"obs{args.n_obs}_lr{args.lr}"
+    run_name = f"{'wls_' if args.wls else ''}obs{args.n_obs}_lr{args.lr}"
     out_dir = os.path.join("results", run_name)
     os.makedirs(out_dir, exist_ok=True)
     log_path = os.path.join(out_dir, "log.txt")
