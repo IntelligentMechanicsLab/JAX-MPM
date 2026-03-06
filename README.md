@@ -151,9 +151,8 @@ for a complete, runnable inverse-problem workflow.
 
 | Example | Section | Description |
 |---------|---------|-------------|
+| [Dam-break validation](examples/dam_break_validation/) | §4.1.1 | Compare APIC / TPIC / FLIP against the Ritter analytical solution |
 | [Dam-break friction inversion](examples/dam_break_friction_inversion/) | §5.1.3 | Recover spatially varying bottom friction from sparse Lagrangian observations |
-| [Dam-break validation](examples/dam_break_validation/) | §5.1.1 | Compare APIC / TPIC / FLIP against the Ritter analytical solution |
-
 *More examples will be added progressively.*
 
 ---
