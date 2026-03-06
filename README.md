@@ -177,7 +177,7 @@ If you use JAX-MPM in your research, please cite:
 ## Acknowledgement 👍
 
 This work is developed by the
-[Computational Intelligence and Multiphysics Simulation Lab at the University of Minnesota](https://qzhe.umn.edu/).
+[Computational Intelligence and Multiphysics Simulation Lab](https://qzhe.umn.edu/) at the University of Minnesota.
 
 ---
 
