@@ -1,4 +1,4 @@
-# *JAX-MPM* — Differentiable Material Point Method in JAX
+# *JAX-MPM*: Differentiable Material Point Method in JAX
 
 [![arXiv](https://img.shields.io/badge/arXiv-2507.04192-b31b1b.svg)](https://arxiv.org/abs/2507.04192)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
