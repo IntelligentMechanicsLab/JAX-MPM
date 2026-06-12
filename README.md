@@ -170,6 +170,16 @@ If you use JAX-MPM in your research, please cite:
   journal = {arXiv preprint arXiv:2507.04192},
   year    = {2025}
 }
+@article{du2026jax,
+  title={JAX-MPM: a learning-augmented differentiable meshfree framework for GPU-accelerated Lagrangian simulation and geophysical inverse modeling},
+  author={Du, Honghui and He, QiZhi},
+  journal={Engineering with Computers},
+  volume={42},
+  number={3},
+  pages={85},
+  year={2026},
+  publisher={Springer London London}
+}
 ```
 
 ---
