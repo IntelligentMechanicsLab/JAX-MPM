@@ -36,6 +36,10 @@ geomechanics and geophysical hazard applications.
 
 ## Installation ⚙️
 
+For coding assistants, the optional [JAX-MPM skill](skills/jax-mpm/SKILL.md)
+maps existing examples, parameter conventions, resource caveats, and the published
+citation. It adds no simulation code and does not run jobs on installation.
+
 ```bash
 git clone https://github.com/IntelligentMechanicsLab/JAX-MPM.git
 cd JAX-MPM
@@ -194,4 +198,3 @@ This work is developed by the
 ## License
 
 [MIT](LICENSE) © 2025 Honghui Du, QiZhi He
-
