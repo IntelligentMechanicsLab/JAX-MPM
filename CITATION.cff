@@ -1,0 +1,23 @@
+cff-version: 1.2.0
+message: If you use this software, please cite the published article below. See the
+  README for additional method-specific citations.
+type: software
+title: JAX-MPM
+authors: &id001
+- family-names: Du
+  given-names: Honghui
+- family-names: He
+  given-names: QiZhi
+repository-code: https://github.com/IntelligentMechanicsLab/JAX-MPM
+url: https://honghui-du.github.io/publication/jax-mpm/
+preferred-citation:
+  type: article
+  title: 'JAX-MPM: a learning-augmented differentiable meshfree framework for GPU-accelerated
+    Lagrangian simulation and geophysical inverse modeling'
+  authors: *id001
+  doi: 10.1007/s00366-026-02320-6
+  journal: Engineering with Computers
+  volume: '42'
+  year: 2026
+  url: https://doi.org/10.1007/s00366-026-02320-6
+  start: '85'
