@@ -11,6 +11,12 @@ enabling GPU-accelerated **forward and inverse modelling** of large
 deformations, frictional contact, and inelastic materials — with emphasis on
 geomechanics and geophysical hazard applications.
 
+## Paper and resources
+
+**Honghui Du and QiZhi He.** JAX-MPM: a learning-augmented differentiable meshfree framework for GPU-accelerated Lagrangian simulation and geophysical inverse modeling. *Engineering with Computers*, **42**, article 85 (2026).
+
+[Journal article](https://doi.org/10.1007/s00366-026-02320-6) · [Published PDF](https://link.springer.com/content/pdf/10.1007/s00366-026-02320-6.pdf) · [Overview and results](https://honghui-du.github.io/publication/jax-mpm/) · [Preprint](https://arxiv.org/abs/2507.04192)
+
 ---
 
 ## Design Philosophy 🧠
@@ -31,8 +37,8 @@ geomechanics and geophysical hazard applications.
 ## Installation ⚙️
 
 ```bash
-git clone https://github.com/IntelligentMechanicsLab/DiffProg-JAX-MPM.git
-cd DiffProg-JAX-MPM
+git clone https://github.com/IntelligentMechanicsLab/JAX-MPM.git
+cd JAX-MPM
 pip install -r requirements.txt
 ```
 
@@ -44,7 +50,7 @@ pip install -r requirements.txt
 ## Repository Structure 📁
 
 ```
-DiffProg-JAX-MPM/
+JAX-MPM/
 ├── jaxmpm/                         # Core solver library
 │   ├── __init__.py
 │   ├── config.py                   #   Simulation configuration (MPMConfig dataclass)
@@ -60,13 +66,13 @@ DiffProg-JAX-MPM/
 │   └── solver_wls.py               #   Convenience wrapper: solver with WLS kernels
 │
 ├── examples/                       # Reproducing paper results
-│   ├── dam_break_friction_inversion/   §5.1.3 — spatially varying friction inversion
+│   ├── dam_break_friction_inversion/   §5.3 — spatially varying friction inversion
 │   │   ├── README.md
 │   │   ├── generate_data.py        #   Forward sim → ground-truth trajectory
 │   │   ├── train.py                #   Gradient-based friction inversion (APIC kernel)
 │   │   ├── train_wls.py            #   Same inversion with WLS-corrected kernel
 │   │   └── plot_results.py         #   Visualisation
-│   └── dam_break_validation/           §5.1.1 — transfer scheme comparison
+│   └── dam_break_validation/           §4.1.1 — transfer scheme comparison
 │       ├── README.md
 │       └── run_validation.py       #   APIC / TPIC / FLIP vs Ritter analytical solution
 │
@@ -135,7 +141,7 @@ for a complete, runnable inverse-problem workflow.
 |:----:|:----:|:----:|
 | ![APIC animation](examples/dam_break_validation/dam_break_apic.gif) | ![TPIC animation](examples/dam_break_validation/dam_break_tpic.gif) | ![FLIP animation](examples/dam_break_validation/dam_break_flip.gif) |
 
-### Spatially varying friction inversion (§5.1.3)
+### Spatially varying friction inversion (§5.3)
 
 <p align="center">
       <img src="docs/inversion_loss.png" width="600" alt="Training convergence: loss vs epoch for the friction inversion problem" />
@@ -152,35 +158,29 @@ for a complete, runnable inverse-problem workflow.
 | Example | Section | Description |
 |---------|---------|-------------|
 | [Dam-break validation](examples/dam_break_validation/) | §4.1.1 | Compare APIC / TPIC / FLIP against the Ritter analytical solution |
-| [Dam-break friction inversion](examples/dam_break_friction_inversion/) | §5.1.3 | Recover spatially varying bottom friction from sparse Lagrangian observations |
+| [Dam-break friction inversion](examples/dam_break_friction_inversion/) | §5.3 | Recover spatially varying bottom friction from sparse Lagrangian observations |
 *More examples will be added progressively.*
 
 ---
 
 ## Citation 🔥
 
-If you use JAX-MPM in your research, please cite:
+If you use JAX-MPM in your research, please cite the published article:
 
 ```bibtex
-@article{du2025jax,
-  title   = {JAX-MPM: A Learning-Augmented Differentiable Meshfree Framework
-             for GPU-Accelerated Lagrangian Simulation and Geophysical
-             Inverse Modeling},
-  author  = {Du, Honghui and He, QiZhi},
-  journal = {arXiv preprint arXiv:2507.04192},
-  year    = {2025}
-}
 @article{du2026jax,
-  title={JAX-MPM: a learning-augmented differentiable meshfree framework for GPU-accelerated Lagrangian simulation and geophysical inverse modeling},
-  author={Du, Honghui and He, QiZhi},
-  journal={Engineering with Computers},
-  volume={42},
-  number={3},
-  pages={85},
-  year={2026},
-  publisher={Springer London London}
+  title = {{JAX-MPM: a learning-augmented differentiable meshfree framework for GPU-accelerated Lagrangian simulation and geophysical inverse modeling}},
+  author = {Du, Honghui and He, QiZhi},
+  journal = {Engineering with Computers},
+  volume = {42},
+  pages = {85},
+  year = {2026},
+  doi = {10.1007/s00366-026-02320-6},
+  url = {https://doi.org/10.1007/s00366-026-02320-6}
 }
 ```
+
+The [arXiv preprint](https://arxiv.org/abs/2507.04192) is also available. Section references in this README refer to the published article.
 
 ---
 
